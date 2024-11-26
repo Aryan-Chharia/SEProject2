@@ -13,7 +13,10 @@ const schema = new mongoose.Schema({
     type: String,
     required: true,
   },
-
+  bypass_payment: {
+    type: Boolean,
+    default: true,
+  },
   createdAt: {
     type: Date,
     default: Date.now,

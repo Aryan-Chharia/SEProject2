@@ -65,7 +65,6 @@ export const getMyCourses = TryCatch(async (req, res) => {
 
 export const checkout = TryCatch(async (req, res) => {
   const user = await User.findById(req.user._id);
-
   const course = await Courses.findById(req.params.id);
 
   if (user.subscription.includes(course._id)) {
@@ -74,53 +73,52 @@ export const checkout = TryCatch(async (req, res) => {
     });
   }
 
-  const options = {
+  // Create a mock order with course price
+  const mockOrder = {
+    id: `order_${Date.now()}`,
     amount: Number(course.price * 100),
     currency: "INR",
   };
 
-  const order = await instance.orders.create(options);
-
   res.status(201).json({
-    order,
+    order: mockOrder,
     course,
   });
 });
 
 export const paymentVerification = TryCatch(async (req, res) => {
-  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } =
-    req.body;
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
-  const body = razorpay_order_id + "|" + razorpay_payment_id;
-
-  const expectedSignature = crypto
-    .createHmac("sha256", process.env.Razorpay_Secret)
-    .update(body)
-    .digest("hex");
-
-  const isAuthentic = expectedSignature === razorpay_signature;
-
-  if (isAuthentic) {
+  try {
+    // Create payment record
     await Payment.create({
       razorpay_order_id,
       razorpay_payment_id,
       razorpay_signature,
     });
 
+    // Update user subscription
     const user = await User.findById(req.user._id);
-
     const course = await Courses.findById(req.params.id);
 
-    user.subscription.push(course._id);
+    if (!user || !course) {
+      return res.status(404).json({
+        message: "User or course not found",
+      });
+    }
 
+    // Add course to user's subscription
+    user.subscription.push(course._id);
     await user.save();
 
     res.status(200).json({
       message: "Course Purchased Successfully",
+      razorpay_payment_id, // Send this back for the success page
     });
-  } else {
+  } catch (error) {
     return res.status(400).json({
-      message: "Payment Failed",
+      message: "Failed to process purchase",
+      error: error.message,
     });
   }
 });

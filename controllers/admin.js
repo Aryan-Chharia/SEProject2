@@ -63,34 +63,71 @@ export const deleteLecture = TryCatch(async (req, res) => {
   res.json({ message: "Lecture Deleted" });
 });
 
+// ... (keep other existing functions unchanged) ...
+
 const unlinkAsync = promisify(fs.unlink);
 
 export const deleteCourse = TryCatch(async (req, res) => {
+  // Find the course
   const course = await Courses.findById(req.params.id);
+  
+  if (!course) {
+    return res.status(404).json({
+      message: "Course not found"
+    });
+  }
 
-  const lectures = await Lecture.find({ course: course._id });
+  try {
+    // Find all lectures associated with the course
+    const lectures = await Lecture.find({ course: course._id });
 
-  await Promise.all(
-    lectures.map(async (lecture) => {
-      await unlinkAsync(lecture.video);
-      console.log("video deleted");
-    })
-  );
+    // Delete all lecture videos from storage
+    await Promise.all(
+      lectures.map(async (lecture) => {
+        if (lecture.video && fs.existsSync(lecture.video)) {
+          await unlinkAsync(lecture.video);
+          console.log(`Deleted lecture video: ${lecture.video}`);
+        }
+      })
+    );
 
-  rm(course.image, () => {
-    console.log("image deleted");
-  });
+    // Delete course image if it exists
+    if (course.image && fs.existsSync(course.image)) {
+      await unlinkAsync(course.image);
+      console.log(`Deleted course image: ${course.image}`);
+    }
 
-  await Lecture.find({ course: req.params.id }).deleteMany();
+    // Delete all lectures from the database
+    await Lecture.deleteMany({ course: course._id });
+    console.log(`Deleted all lectures for course: ${course._id}`);
 
-  await course.deleteOne();
+    // Delete the course itself
+    await course.deleteOne();
+    console.log(`Deleted course: ${course._id}`);
 
-  await User.updateMany({}, { $pull: { subscription: req.params.id } });
+    // Remove course from all users' subscriptions
+    await User.updateMany(
+      { subscription: course._id },
+      { $pull: { subscription: course._id } }
+    );
+    console.log(`Removed course from all user subscriptions`);
 
-  res.json({
-    message: "Course Deleted",
-  });
+    res.status(200).json({
+      success: true,
+      message: "Course and all associated content deleted successfully"
+    });
+  } catch (error) {
+    // If something fails, send error response
+    console.error("Error deleting course:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete course",
+      error: error.message
+    });
+  }
 });
+
+// ... (keep other existing functions unchanged) ...
 
 export const getAllStats = TryCatch(async (req, res) => {
   const totalCoures = (await Courses.find()).length;
